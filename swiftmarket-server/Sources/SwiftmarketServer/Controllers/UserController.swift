@@ -14,7 +14,20 @@ struct UserController: RouteCollection {
 
     func create(req: Request) async throws -> Response {
         let payload = try validatedContent(CreateUserRequest.self, from: req)
-        let user = User(username: payload.username, email: payload.email)
+        let normalizedUsername = payload.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedEmail = payload.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        let existingUser = try await User.query(on: req.db)
+            .group(.or) { group in
+                group.filter(\.$username == normalizedUsername)
+                group.filter(\.$email == normalizedEmail)
+            }
+            .first()
+
+        if existingUser != nil {
+            throw Abort(.conflict, reason: "A user with this username or email already exists.")
+        }
+        let user = User(username: normalizedUsername, email: normalizedEmail)
 
         try await user.save(on: req.db)
 
